@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Golf Swing Analyzer</string>
+
+    <!-- Écran caméra -->
+    <string name="guide_steps">1. Cadrez le golfeur et la balle   2. Restez immobile   3. Agitez la main 3 fois devant la caméra</string>
+    <string name="guide_countdown">Préparez-vous. Touchez l\'écran pour annuler.</string>
+    <string name="guide_recording">Swing ! Appuyez sur Arrêter pour terminer plus tôt.</string>
+    <string name="status_waiting">En attente du geste</string>
+    <string name="status_detected">Mouvement détecté %1$d/%2$d</string>
+    <string name="status_countdown">Décompte</string>
+    <string name="status_recording">Enregistrement</string>
+    <string name="btn_record">Lancer</string>
+    <string name="btn_cancel">Annuler</string>
+    <string name="btn_stop">Arrêter</string>
+    <string name="sensitivity">Sensibilité : %s</string>
+    <string name="tip_manual">Bouton volume, télécommande Bluetooth ou bouton Lancer pour démarrer.</string>
+    <string name="no_slowmo">Slow-motion matériel non disponible : enregistrement 60 fps (ralenti logiciel).</string>
+    <string name="no_camera_permission">Permission caméra refusée.</string>
+
+    <!-- Écran de revue -->
+    <string name="btn_play_pause">Lecture / Pause</string>
+    <string name="btn_speed">Vitesse : %s</string>
+    <string name="btn_analyze">Suivre la balle</string>
+    <string name="btn_save">Enregistrer sans tracé</string>
+    <string name="btn_save_traced">Enregistrer avec tracé</string>
+    <string name="btn_again">Nouveau swing</string>
+    <string name="hint_tap_ball">Mettez la vidéo en pause sur la première image, puis touchez le centre de la balle.</string>
+    <string name="analysis_running">Analyse de la trajectoire…</string>
+    <string name="analysis_failed">Balle non détectée. Touchez à nouveau la balle sur la première image puis relancez l\'analyse.</string>
+    <string name="saved_ok">Enregistré dans Movies/GolfSwing et Download/GolfSwing</string>
+    <string name="save_failed">Échec de l\'enregistrement.</string>
+
+    <!-- Menu principal -->
+    <string name="menu_live">Analyse en direct, tir par tir</string>
+    <string name="menu_analyze_file">Analyser une vidéo enregistrée</string>
+    <string name="menu_session">Enregistrer une session complète</string>
+    <string name="menu_importing">Import de la vidéo…</string>
+    <string name="menu_import_failed">Import impossible.</string>
+
+    <!-- Session continue -->
+    <string name="session_start">Démarrer la session</string>
+    <string name="session_stop">Arrêter la session</string>
+    <string name="session_ready">Cadrez le golfeur de dos, puis démarrez. Le golfeur peut enchaîner ses swings.</string>
+    <string name="session_recording">Session en cours : enchaînez les swings, puis arrêtez.</string>
+    <string name="session_saving">Enregistrement de la session…</string>
+    <string name="session_analysis_title">Analyse de la session</string>
+    <string name="session_scan_failed">Vidéo illisible ou sans swing détectable.</string>
+
+    <!-- Analyse IA -->
+    <string name="ai_question">Voulez-vous une analyse de cette session par une IA (Gemini, ChatGPT…) ? Un prompt sera préparé avec la vidéo et les mesures.</string>
+    <string name="ai_yes">Oui</string>
+    <string name="ai_no">Non</string>
+    <string name="ai_share">Envoyer avec la vidéo</string>
+    <string name="ai_copy">Copier le prompt</string>
+    <string name="ai_close">Fermer</string>
+    <string name="ai_copied">Prompt copié</string>
+</resources>
