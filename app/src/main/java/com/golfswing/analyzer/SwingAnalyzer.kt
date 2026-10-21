@@ -706,48 +706,80 @@ object SwingAnalyzer {
      * Les vitesses ne sont fiables que si la taille de la balle a été relevée au toucher.
      */
     fun fromMarkers(markers: List<DoubleArray>, rawW: Int, rawH: Int, focalRatio: Double): SwingResult? {
-        val sorted = markers.sortedBy { it[0] }
-        if (sorted.size < 5) return null
-        val tee = sorted[0]
-        val flight = sorted.drop(1)
-        val known = flight.map { dOf(it) }.filter { !it.isNaN() && it > 0.0 }.sorted()
+        // Repères triés ; deux repères à moins de 0,01 s l'un de l'autre : on garde le premier
+        val pts = ArrayList<DoubleArray>()
+        for (m in markers.sortedBy { it[0] }) {
+            if (pts.isEmpty() || m[0] - pts.last()[0] >= 0.01) pts.add(m)
+        }
+        if (pts.size < 3) return null
+        val known = pts.map { dOf(it) }.filter { !it.isNaN() && it > 0.0 }.sorted()
         val dDefault = if (known.isEmpty()) 0.016 * rawH else known[known.size / 2]
-        val samples = flight.map { m ->
+        val all = pts.map { m ->
             val d = dOf(m)
             BallSample(m[0], m[1], m[2], if (d.isNaN() || d <= 0.0) dDefault else d)
         }
-        val t0 = samples[0].tVid
-        val ts = DoubleArray(samples.size) { samples[it].tVid - t0 }
-        if (ts[ts.size - 1] < 0.05) return null   // repères simultanés : pas de courbe possible
-        val cu = polyfit2(ts, DoubleArray(samples.size) { samples[it].u })
-        val cv = polyfit2(ts, DoubleArray(samples.size) { samples[it].v })
-        val dMean = samples.map { it.d }.average()
-        val tEnd = ts[ts.size - 1]
+        val n = all.size
+        val t0 = all[0].tVid
+        val ts = DoubleArray(n) { all[it].tVid - t0 }
+        if (ts[n - 1] < 0.05) return null   // repères presque simultanés : pas de courbe possible
+        val us = DoubleArray(n) { all[it].u }
+        val vs = DoubleArray(n) { all[it].v }
+        val dMean = all.map { it.d }.average()
+
+        // La courbe passe par chaque repère, en suivant la timeline, et reste lisse
         val smooth = ArrayList<BallSample>()
         var t = 0.0
-        while (t <= tEnd + 1e-9) {
-            val u = cu[0] + cu[1] * t + cu[2] * t * t
-            val v = cv[0] + cv[1] * t + cv[2] * t * t
-            smooth.add(BallSample(t0 + t, u, v, dMean))
+        while (t <= ts[n - 1] + 1e-9) {
+            smooth.add(BallSample(t0 + t, hermite(ts, us, t), hermite(ts, vs, t), dMean))
             t += 0.01
         }
-        val n = samples.size
-        val span = ts[n - 1]
-        val base = BallTracker(rawW, rawH, doubleArrayOf(tee[0], tee[1], tee[2]), emptyList(), focalRatio)
-            .physics(samples)
-        val common = base.copy(
-            predicted = smooth,
-            confidence = min(70, 20 + 8 * n),
-            quality = if (n >= 6) "moyenne" else "faible",
-            doubtful = emptyList(),
-            nFit = n
-        )
-        // Physique seulement si au moins 4 points couvrent 0,3 s ; sinon, la courbe seule
-        if (n >= 4 && span >= 0.3) return common
-        return common.copy(
+
+        val flight = all.drop(1)
+        val span = flight.last().tVid - flight.first().tVid
+        val confidence = min(70, 20 + 8 * n)
+        val quality = if (n >= 6) "moyenne" else "faible"
+        // Physique seulement si au moins 4 points en vol couvrent 0,3 s ; sinon, la courbe seule
+        if (flight.size >= 4 && span >= 0.3) {
+            val base = BallTracker(rawW, rawH, doubleArrayOf(all[0].tVid, all[0].u, all[0].v), emptyList(), focalRatio)
+                .physics(flight)
+            return base.copy(
+                samples = all, predicted = smooth, confidence = confidence,
+                quality = quality, doubtful = emptyList(), nFit = n
+            )
+        }
+        return SwingResult(
+            samples = all, predicted = smooth, rawW = rawW, rawH = rawH, impactT = t0,
             ballSpeed = -1.0, launchDeg = 0.0, azimuthDeg = 0.0, curveM = 0.0, shape = "",
-            carryM = -1.0, apexM = -1.0, hangS = -1.0, clubSpeed = -1.0
+            carryM = -1.0, apexM = -1.0, hangS = -1.0, clubSpeed = -1.0,
+            confidence = confidence, quality = quality, nFit = n
         )
+    }
+
+    /** Interpolation de Hermite cubique par morceaux : la courbe passe par chaque point, sans à-coups. */
+    private fun hermite(ts: DoubleArray, ps: DoubleArray, t: Double): Double {
+        val n = ts.size
+        if (t <= ts[0]) return ps[0]
+        if (t >= ts[n - 1]) return ps[n - 1]
+        var i = 0
+        while (i < n - 2 && t > ts[i + 1]) i++
+        val h = ts[i + 1] - ts[i]
+        val m0 = tangent(ts, ps, i) * h
+        val m1 = tangent(ts, ps, i + 1) * h
+        val s = (t - ts[i]) / h
+        val s2 = s * s
+        val s3 = s2 * s
+        return (2 * s3 - 3 * s2 + 1) * ps[i] + (s3 - 2 * s2 + s) * m0 +
+            (-2 * s3 + 3 * s2) * ps[i + 1] + (s3 - s2) * m1
+    }
+
+    /** Pente en un point : différence centrée, décentrée aux extrémités. */
+    private fun tangent(ts: DoubleArray, ps: DoubleArray, k: Int): Double {
+        val n = ts.size
+        return when (k) {
+            0 -> (ps[1] - ps[0]) / (ts[1] - ts[0])
+            n - 1 -> (ps[n - 1] - ps[n - 2]) / (ts[n - 1] - ts[n - 2])
+            else -> (ps[k + 1] - ps[k - 1]) / (ts[k + 1] - ts[k - 1])
+        }
     }
 
     private fun dOf(m: DoubleArray): Double = if (m.size > 3) m[3] else Double.NaN

@@ -66,6 +66,7 @@ class ReviewActivity : AppCompatActivity() {
     private var trimEnd = Double.MAX_VALUE
     private var clipOffset = 0.0         // décalage (s) entre la vidéo source et le clip découpé
     private var ready = false            // true quand le clip (ou la vidéo) est prêt à être lu et analysé
+    private var manualMode = false       // mode manuel : pas de détection, la courbe passe par les points posés à la main
 
     private var player: MediaPlayer? = null
     private var surface: Surface? = null
@@ -157,6 +158,7 @@ class ReviewActivity : AppCompatActivity() {
             setSpeedParams()
         }
         b.btnAnalyze.setOnClickListener { runAnalysis() }
+        b.btnManual.setOnClickListener { toggleManual() }
         b.btnSave.setOnClickListener { saveAll(withTrace = false) }
         b.btnSaveTraced.setOnClickListener { saveAll(withTrace = true) }
         b.btnAgain.setOnClickListener { finish() }
@@ -406,6 +408,17 @@ class ReviewActivity : AppCompatActivity() {
         }
         val (u, v) = b.trajectoryView.viewToRaw(x, y)
         val t = (player?.currentPosition ?: 0) / 1000.0
+        if (manualMode) {
+            // Mode manuel : le point est pris tel quel, sans recalage automatique
+            markers.add(doubleArrayOf(t, u, v, Double.NaN))
+            markers.sortBy { it[0] }
+            b.trajectoryView.setMarkers(markers)
+            result = null
+            b.trajectoryView.setResult(null)
+            b.tvResults.visibility = View.GONE
+            b.tvInfo.text = "${markers.size} point(s) posé(s). Continuez à toucher la balle, puis « Suivre la balle »."
+            return
+        }
         val m = doubleArrayOf(t, u, v, Double.NaN)
         markers.add(m)
         markers.sortBy { it[0] }
@@ -442,6 +455,19 @@ class ReviewActivity : AppCompatActivity() {
         b.tvInfo.text = if (isTee) "Tee : $status." else "Repère ${markers.size} : $status. Appuyez sur « Suivre la balle »."
     }
 
+    /** Bascule le mode manuel : sans détection automatique, la trajectoire passe par les points posés à la main. */
+    private fun toggleManual() {
+        manualMode = !manualMode
+        b.btnManual.text = if (manualMode) "Mode manuel : activé" else "Mode manuel : désactivé"
+        result = null
+        b.trajectoryView.setResult(null)
+        b.tvResults.visibility = View.GONE
+        b.tvInfo.text = if (manualMode)
+            "Mode manuel : touchez la balle à chaque instant clé (tee, puis vol), puis « Suivre la balle »."
+        else
+            "Détection automatique activée. Touchez le tee pour repérer la balle."
+    }
+
     private fun clearMarkers() {
         markers.clear()
         b.trajectoryView.setMarkers(markers)
@@ -457,6 +483,16 @@ class ReviewActivity : AppCompatActivity() {
             return
         }
         player?.let { try { it.pause() } catch (_: Exception) {} }
+        if (manualMode) {
+            // Mode manuel : aucune détection, la courbe passe par les points posés
+            val res = SwingAnalyzer.fromMarkers(markers.map { it.copyOf() }, rawW, rawH, focal)
+            if (res == null) {
+                b.tvInfo.text = "Mode manuel : il faut au moins 3 points (tee + 2 positions de la balle en vol)."
+            } else {
+                onAnalysisDone(res, "", true)
+            }
+            return
+        }
         b.btnAnalyze.isEnabled = false
         b.tvInfo.text = getString(R.string.analysis_running)
         val snapshot = markers.map { it.copyOf() }

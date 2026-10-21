@@ -152,6 +152,16 @@
             android:textSize="14sp"
             android:visibility="gone" />
 
+        <!-- Mode manuel : pas de détection automatique, la courbe passe par les points posés à la main -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnManual"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Mode manuel : désactivé"
+            android:textColor="#B0B0B0" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
