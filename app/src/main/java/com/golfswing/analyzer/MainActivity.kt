@@ -12,7 +12,9 @@ import android.media.ToneGenerator
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.GestureDetector
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.TextureView
 import android.view.View
 import android.view.animation.LinearInterpolator
@@ -63,8 +65,14 @@ class MainActivity : AppCompatActivity() {
     private var handAnim: ObjectAnimator? = null
     private val ui = Handler(Looper.getMainLooper())
 
+    private var club = Clubs.UNSPECIFIED            // club demandé avant chaque tir
+    private var choosing = false                    // la liste des clubs est ouverte
+    @Volatile private var ballInFrame = false       // balle reconnue dans le cadre virtuel
+    private var frameCount = 0
+    private lateinit var framingGestures: GestureDetector
+
     private val wave = WaveDetector(
-        onWave = { runOnUiThread { if (phase == Phase.PREVIEW) startCountdown() } },
+        onWave = { runOnUiThread { if (phase == Phase.PREVIEW && ballInFrame) requestCountdown() } },
         onProgress = { count, needed -> runOnUiThread { updateMeter(count, needed) } }
     )
 
@@ -72,6 +80,9 @@ class MainActivity : AppCompatActivity() {
         val img = reader.acquireLatestImage() ?: return@OnImageAvailableListener
         try {
             wave.process(img)
+            // Balle dans le cadre ? Une image sur trois suffit, la zone est petite
+            frameCount++
+            if (frameCount % 3 == 0) checkBallInFrame(img)
         } finally {
             img.close()
         }
@@ -118,8 +129,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         b.btnRecord.setOnClickListener { onManualTrigger() }
-        // Toucher l'écran pendant le décompte = annulation
-        b.textureView.setOnClickListener { if (phase == Phase.COUNTDOWN) cancelCountdown() }
+        // Toucher l'écran : pendant le décompte = annulation, sinon verrouille le cadrage sur la zone touchée
+        framingGestures = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean = true
+            override fun onSingleTapUp(e: MotionEvent): Boolean { onFramingTap(e.x, e.y); return true }
+            override fun onLongPress(e: MotionEvent) { onFramingLongPress() }
+        })
+        b.textureView.setOnTouchListener { _, e -> framingGestures.onTouchEvent(e); true }
 
         b.btnSensitivity.setOnClickListener {
             val values = WaveDetector.Level.values()
@@ -176,7 +192,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun onManualTrigger() {
         when (phase) {
-            Phase.PREVIEW -> startCountdown()
+            Phase.PREVIEW -> requestCountdown()
             Phase.COUNTDOWN -> cancelCountdown()
             Phase.RECORDING -> stopRecording()
         }
@@ -211,6 +227,61 @@ class MainActivity : AppCompatActivity() {
     // ------------------------------------------------------------------
     // Décompte (retardateur)
     // ------------------------------------------------------------------
+
+    /** Avant chaque tir : choix du club, puis décompte. */
+    private fun requestCountdown() {
+        if (controller == null || choosing) return
+        choosing = true
+        wave.enabled = false
+        Clubs.choose(
+            this, club,
+            onPick = {
+                choosing = false
+                club = it
+                startCountdown()
+            },
+            onCancel = {
+                choosing = false
+                wave.enabled = true
+                wave.reset()
+                wave.armFor(1000)
+            }
+        )
+    }
+
+    /** Balle reconnue dans le cadre virtuel : le cadre passe au vert. */
+    private fun checkBallInFrame(img: android.media.Image) {
+        val w = img.width
+        val h = img.height
+        val blobs = SwingAnalyzer.findBallBlobs(
+            img,
+            (FrameGuideView.X0 * w).toInt(), (FrameGuideView.Y0 * h).toInt(),
+            (FrameGuideView.X1 * w).toInt(), (FrameGuideView.Y1 * h).toInt(),
+            2, 0.006 * w, 0.05 * w
+        )
+        val found = blobs.any { it.score >= 0.5 }
+        if (found != ballInFrame) {
+            ballInFrame = found
+            runOnUiThread { b.frameGuide.setFound(found) }
+        }
+    }
+
+    /** Appui sur l'écran : verrouille le cadrage sur la zone touchée. */
+    private fun onFramingTap(x: Float, y: Float) {
+        if (phase == Phase.COUNTDOWN) {
+            cancelCountdown()
+            return
+        }
+        if (phase != Phase.PREVIEW || b.textureView.width == 0) return
+        controller?.lockAt(x / b.textureView.width, y / b.textureView.height)
+        b.tvStatus.text = "Cadrage verrouillé (appui long pour libérer)"
+    }
+
+    private fun onFramingLongPress() {
+        if (phase != Phase.PREVIEW) return
+        controller?.unlock()
+        b.tvStatus.text = getString(R.string.status_waiting)
+    }
 
     private fun startCountdown() {
         if (controller == null) return
@@ -296,6 +367,7 @@ class MainActivity : AppCompatActivity() {
                 putExtra(ReviewActivity.EXTRA_FPS, if (usedFps > 0) usedFps else (c?.previewFpsRange?.upper ?: 60))
                 putExtra(ReviewActivity.EXTRA_FOCAL_RATIO, c?.focalPxRatio ?: 0.0)
                 putExtra(ReviewActivity.EXTRA_HFOV, c?.hfovDeg ?: 60.0)
+                putExtra(ReviewActivity.EXTRA_CLUB, club)
             })
         } else {
             abortRecording("Enregistrement invalide, réessayez.")

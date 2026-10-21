@@ -12,6 +12,8 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.view.GestureDetector
+import android.view.MotionEvent
 import android.view.TextureView
 import android.view.WindowManager
 import android.widget.Toast
@@ -48,6 +50,9 @@ class SessionActivity : AppCompatActivity() {
     private var file: File? = null
     private var fpsChoice = 120
     private val ui = Handler(Looper.getMainLooper())
+    private var club = Clubs.UNSPECIFIED     // demandé une fois au début de la session
+    private var clubChosen = false
+    private lateinit var framingGestures: GestureDetector
 
     private val permLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) startCameraIfReady() else b.tvSessionStatus.text = getString(R.string.no_camera_permission)
@@ -77,7 +82,17 @@ class SessionActivity : AppCompatActivity() {
         b.tvSessionStatus.text = if (caps == null) "Aucune caméra arrière détectée." else getString(R.string.session_ready)
         updateQualityLabel()
 
-        b.btnSessionToggle.setOnClickListener { if (recording) stopSession(restart = true) else startSession() }
+        b.btnSessionToggle.setOnClickListener { if (recording) stopSession(restart = true) else requestStart() }
+        // Appui = verrouille le cadrage sur la zone touchée ; appui long = libère le cadrage
+        framingGestures = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean = true
+            override fun onSingleTapUp(e: MotionEvent): Boolean { lockFraming(e.x, e.y); return true }
+            override fun onLongPress(e: MotionEvent) {
+                controller?.unlock()
+                b.tvSessionStatus.text = "Cadrage libre"
+            }
+        })
+        b.textureView.setOnTouchListener { _, e -> framingGestures.onTouchEvent(e); true }
         b.btnSessionQuality.setOnClickListener { cycleQuality() }
 
         b.textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
@@ -157,11 +172,31 @@ class SessionActivity : AppCompatActivity() {
         )
     }
 
+    /** Le club est demandé une seule fois par session, au premier démarrage. */
+    private fun requestStart() {
+        if (clubChosen) {
+            startSession()
+            return
+        }
+        Clubs.choose(this, club, onPick = {
+            club = it
+            clubChosen = true
+            startSession()
+        })
+    }
+
+    private fun lockFraming(x: Float, y: Float) {
+        val c = controller ?: return
+        if (b.textureView.width == 0 || b.textureView.height == 0) return
+        c.lockAt(x / b.textureView.width, y / b.textureView.height)
+        b.tvSessionStatus.text = "Cadrage verrouillé sur la zone touchée (appui long pour libérer)"
+    }
+
     private fun startSession() {
         val ctl = controller ?: return
         val st = b.textureView.surfaceTexture ?: return
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val f = File(filesDir, "session_$stamp.mp4")
+        val f = File(filesDir, "session_${Clubs.slug(club)}_$stamp.mp4")
         file = f
 
         // En haute vitesse, la session n'a pas d'aperçu : on le signale à l'utilisateur
@@ -233,6 +268,7 @@ class SessionActivity : AppCompatActivity() {
                 startActivity(Intent(this, SessionAnalysisActivity::class.java).apply {
                     putExtra(SessionAnalysisActivity.EXTRA_VIDEO, f.absolutePath)
                     putExtra(SessionAnalysisActivity.EXTRA_FOCAL, caps?.focalPxRatio ?: 0.75)
+                    putExtra(SessionAnalysisActivity.EXTRA_CLUB, club)
                 })
                 finish()
             }

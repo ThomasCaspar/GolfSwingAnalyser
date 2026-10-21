@@ -11,6 +11,12 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- Cadre virtuel fixe de placement de la balle (tir par tir) -->
+    <com.golfswing.analyzer.FrameGuideView
+        android:id="@+id/frameGuide"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
     <!-- Remplacement du flash quand la lampe n'existe pas -->
     <View
         android:id="@+id/flashOverlay"

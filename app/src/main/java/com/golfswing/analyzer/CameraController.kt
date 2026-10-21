@@ -10,6 +10,7 @@ import android.hardware.camera2.CameraConstrainedHighSpeedCaptureSession
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.params.MeteringRectangle
 import android.media.ImageReader
 import android.media.MediaRecorder
 import android.os.Handler
@@ -184,6 +185,61 @@ class CameraController(private val context: Context, val caps: CameraCaps) {
     var usedHighSpeed = false
     var usedFps = 0
 
+    // Verrouillage du cadrage : exposition, balance des blancs et mise au point figées sur la zone touchée
+    @Volatile private var locked = false
+    private var lockRect: MeteringRectangle? = null
+    private var afTriggerPending = false
+
+    /** Verrouille le cadrage sur le point touché ; xNorm et yNorm sont entre 0 et 1, relatifs à l'aperçu. */
+    fun lockAt(xNorm: Float, yNorm: Float) {
+        val h = handler ?: return
+        val active = mgr.getCameraCharacteristics(caps.cameraId)
+            .get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE) ?: return
+        val x = xNorm.coerceIn(0f, 1f)
+        val y = yNorm.coerceIn(0f, 1f)
+        // Coordonnées de l'aperçu -> coordonnées du capteur, selon son orientation
+        val (sx, sy) = when (caps.sensorOrientation) {
+            90 -> Pair(y, 1f - x)
+            270 -> Pair(1f - y, x)
+            180 -> Pair(1f - x, 1f - y)
+            else -> Pair(x, y)
+        }
+        val half = (active.width() * 0.06f).toInt()   // zone d'environ 12 % de la largeur du capteur
+        val cx = (sx * active.width()).toInt().coerceIn(half, active.width() - half)
+        val cy = (sy * active.height()).toInt().coerceIn(half, active.height() - half)
+        lockRect = MeteringRectangle(cx - half, cy - half, 2 * half, 2 * half, MeteringRectangle.METERING_WEIGHT_MAX)
+        locked = true
+        afTriggerPending = true
+        h.post { rebuildRequest() }
+    }
+
+    /** Libère le cadrage : l'exposition et la mise au point redeviennent automatiques. */
+    fun unlock() {
+        locked = false
+        lockRect = null
+        afTriggerPending = false
+        handler?.post { rebuildRequest() }
+    }
+
+    private fun rebuildRequest() {
+        try { repeatFn?.invoke(flashOn) } catch (_: Exception) {}
+    }
+
+    private fun applyLock(b: CaptureRequest.Builder) {
+        val r = lockRect
+        if (!locked || r == null) return
+        b.set(CaptureRequest.CONTROL_AE_LOCK, true)
+        b.set(CaptureRequest.CONTROL_AWB_LOCK, true)
+        b.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO)
+        b.set(CaptureRequest.CONTROL_AE_REGIONS, arrayOf(r))
+        b.set(CaptureRequest.CONTROL_AF_REGIONS, arrayOf(r))
+        if (afTriggerPending) {
+            // Une seule mise au point sur la zone, puis la netteté reste figée
+            b.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START)
+            afTriggerPending = false
+        }
+    }
+
     /** Allume ou éteint la lampe (torche) sans recréer la session. */
     fun setFlash(on: Boolean) {
         flashOn = on
@@ -247,6 +303,7 @@ class CameraController(private val context: Context, val caps: CameraCaps) {
                             addTarget(reader.surface)
                             set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, caps.previewFpsRange)
                             applyFlash(this, flash)
+                            applyLock(this)
                         }.build()
                         s.setRepeatingRequest(r, null, h)
                     }
@@ -321,6 +378,7 @@ class CameraController(private val context: Context, val caps: CameraCaps) {
                             surfaces.forEach { addTarget(it) }
                             set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, range)
                             applyFlash(this, flash)
+                            applyLock(this)
                         }.build()
                         if (highSpeed) {
                             val hs = s as CameraConstrainedHighSpeedCaptureSession

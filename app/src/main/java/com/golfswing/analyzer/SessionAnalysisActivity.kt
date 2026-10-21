@@ -26,6 +26,7 @@ class SessionAnalysisActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_VIDEO = "video"
         const val EXTRA_FOCAL = "focal"
+        const val EXTRA_CLUB = "club"
         // Fenêtre enregistrée autour d'un swing : une marge avant le repère, et le vol de la balle après le swing
         const val TRIM_BEFORE_S = 0.5
         // Longueur de la vidéo analysée pour un swing : seule cette fenêtre est découpée et chargée
@@ -48,6 +49,7 @@ class SessionAnalysisActivity : AppCompatActivity() {
     private var focal = 0.75
     private val rows = ArrayList<Row>()
     private var aiPrompt = ""
+    private var club = Clubs.UNSPECIFIED
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,6 +57,7 @@ class SessionAnalysisActivity : AppCompatActivity() {
         setContentView(b.root)
         videoPath = intent.getStringExtra(EXTRA_VIDEO) ?: run { finish(); return }
         focal = intent.getDoubleExtra(EXTRA_FOCAL, 0.75)
+        club = intent.getStringExtra(EXTRA_CLUB) ?: club
         b.tvSessionTitle.text = getString(R.string.session_analysis_title)
         b.tvSessionProgress.text = "Recherche des swings…"
         Thread { runSession() }.start()
@@ -128,6 +131,7 @@ class SessionAnalysisActivity : AppCompatActivity() {
             putExtra(ReviewActivity.EXTRA_FPS, 60)
             putExtra(ReviewActivity.EXTRA_FOCAL_RATIO, focal)
             putExtra(ReviewActivity.EXTRA_HFOV, 60.0)
+            putExtra(ReviewActivity.EXTRA_CLUB, club)
             putExtra(ReviewActivity.EXTRA_TRIM_START, Math.max(0.0, Math.min(row.seedT, row.startT) - TRIM_BEFORE_S))
             putExtra(ReviewActivity.EXTRA_TRIM_END, Math.max(0.0, Math.min(row.seedT, row.startT) - TRIM_BEFORE_S) + CLIP_LENGTH_S)
             if (row.found) {
@@ -230,6 +234,8 @@ class SessionAnalysisActivity : AppCompatActivity() {
     private fun buildPrompt(): String {
         val sb = StringBuilder()
         sb.appendLine("Tu es un coach de golf expert. Je te joins la vidéo complète d'une session d'entraînement, filmée derrière le golfeur, caméra sur trépied.")
+        sb.appendLine()
+        sb.appendLine("Club utilisé pour cette session : $club.")
         sb.appendLine()
         sb.appendLine("Des mesures automatiques ont été faites sur chaque swing détecté. Ce sont des estimations qui peuvent contenir des erreurs :")
         rows.forEach { r ->

@@ -47,6 +47,7 @@ class ReviewActivity : AppCompatActivity() {
         const val EXTRA_SEED_V = "seed_v"
         const val EXTRA_TRIM_START = "trim_start"   // fenêtre du swing (s) : seule cette plage est enregistrée
         const val EXTRA_TRIM_END = "trim_end"
+        const val EXTRA_CLUB = "club"
 
         // Vitesses de lecture : 1.0 = vitesse réelle de la vidéo
         private val SPEEDS = floatArrayOf(0.1f, 0.25f, 0.5f, 1.0f)
@@ -64,6 +65,7 @@ class ReviewActivity : AppCompatActivity() {
     private var trimmed = false          // true : un swing précis est ouvert, l'enregistrement se limite à sa fenêtre
     private var trimStart = 0.0
     private var trimEnd = Double.MAX_VALUE
+    private var club = Clubs.UNSPECIFIED
     private var clipOffset = 0.0         // décalage (s) entre la vidéo source et le clip découpé
     private var ready = false            // true quand le clip (ou la vidéo) est prêt à être lu et analysé
     private var manualMode = false       // mode manuel : pas de détection, la courbe passe par les points posés à la main
@@ -113,6 +115,7 @@ class ReviewActivity : AppCompatActivity() {
 
         path = intent.getStringExtra(EXTRA_VIDEO) ?: run { finish(); return }
         slowMo = intent.getBooleanExtra(EXTRA_SLOWMO, false)
+        club = intent.getStringExtra(EXTRA_CLUB) ?: club
         focal = intent.getDoubleExtra(EXTRA_FOCAL_RATIO, 0.0)
         speedIdx = if (slowMo) 1 else 3
         if (intent.hasExtra(EXTRA_TRIM_END)) {
@@ -608,7 +611,8 @@ class ReviewActivity : AppCompatActivity() {
             }
 
             val vp = videoPath
-            val name = if (withTrace) "golf_swing_trace_$stamp" else "golf_swing_$stamp"
+            val tag = Clubs.slug(club)
+            val name = if (withTrace) "golf_swing_${tag}_trace_$stamp" else "golf_swing_${tag}_$stamp"
             val videoOk = vp != null && saveFile(
                 MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
                 "Movies/GolfSwing", "$name.mp4", "video/mp4"
@@ -618,7 +622,7 @@ class ReviewActivity : AppCompatActivity() {
                 saveFile(
                     MediaStore.Downloads.EXTERNAL_CONTENT_URI,
                     "Download/GolfSwing", "golf_swing_$stamp.json", "application/json"
-                ) { out -> out.write(res.toJson().put("clip_offset_s", clipOffset).toString(2).toByteArray()) }
+                ) { out -> out.write(res.toJson().put("clip_offset_s", clipOffset).put("club", club).toString(2).toByteArray()) }
             } else true
 
             runOnUiThread {
