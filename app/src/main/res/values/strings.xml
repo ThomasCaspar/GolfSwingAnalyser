@@ -35,6 +35,7 @@
     <string name="menu_live">Analyse en direct, tir par tir</string>
     <string name="menu_analyze_file">Analyser une vidéo enregistrée</string>
     <string name="menu_session">Enregistrer une session complète</string>
+    <string name="menu_manual_file">Analyse manuelle d'une vidéo</string>
     <string name="menu_importing">Import de la vidéo…</string>
     <string name="menu_import_failed">Import impossible.</string>
 

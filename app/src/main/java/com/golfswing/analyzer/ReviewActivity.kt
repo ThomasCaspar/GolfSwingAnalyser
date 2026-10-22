@@ -48,6 +48,7 @@ class ReviewActivity : AppCompatActivity() {
         const val EXTRA_TRIM_START = "trim_start"   // fenêtre du swing (s) : seule cette plage est enregistrée
         const val EXTRA_TRIM_END = "trim_end"
         const val EXTRA_CLUB = "club"
+        const val EXTRA_MANUAL = "manual"   // lecteur seul : mode manuel activé dès l'ouverture
 
         // Vitesses de lecture : 1.0 = vitesse réelle de la vidéo
         private val SPEEDS = floatArrayOf(0.1f, 0.25f, 0.5f, 1.0f)
@@ -123,6 +124,10 @@ class ReviewActivity : AppCompatActivity() {
             trimStart = intent.getDoubleExtra(EXTRA_TRIM_START, 0.0)
             trimEnd = intent.getDoubleExtra(EXTRA_TRIM_END, Double.MAX_VALUE)
         }
+        if (intent.getBooleanExtra(EXTRA_MANUAL, false)) {
+            manualMode = true
+            b.tvInfo.text = "Mode manuel : touchez la balle à chaque instant clé (tee, puis vol), puis « Suivre la balle »."
+        }
 
         // Toucher = repère de balle ; appui long = effacer les repères ; deux doigts = zoom
         gestures = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
@@ -162,6 +167,7 @@ class ReviewActivity : AppCompatActivity() {
         }
         b.btnAnalyze.setOnClickListener { runAnalysis() }
         b.btnManual.setOnClickListener { toggleManual() }
+        if (manualMode) b.btnManual.text = "Mode manuel : activé"
         b.btnSave.setOnClickListener { saveAll(withTrace = false) }
         b.btnSaveTraced.setOnClickListener { saveAll(withTrace = true) }
         b.btnAgain.setOnClickListener { finish() }
