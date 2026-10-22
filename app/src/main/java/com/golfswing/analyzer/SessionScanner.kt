@@ -41,11 +41,14 @@ object SessionScanner {
         val blobs: List<SwingAnalyzer.Blob>
     )
 
-    private class Seed(val t: Double, val u: Double, val v: Double)
+    private class Seed(val t: Double, val u: Double, val v: Double, val d: Double)
 
     private const val GRID = 8          // pas d'échantillonnage pour le mouvement
     private const val BLOB_EVERY_S = 0.05   // recherche de la balle toutes les 50 ms, quelle que soit la cadence
     private const val BLOB_STEP = 4
+    // Après un coup, la balle quitte son emplacement : on regarde cette fenêtre après la fin du mouvement
+    private const val GONE_WINDOW_S = 1.5
+    private const val GONE_MIN_SAMPLES = 3
 
     /** Retourne null si la vidéo est illisible. onProgress reçoit une valeur de 0 à 1. */
     fun scan(path: String, onProgress: (Float) -> Unit): Scan? {
@@ -114,6 +117,7 @@ object SessionScanner {
             val info = MediaCodec.BufferInfo()
             var inEos = false
             var outEos = false
+            var rendered = 0   // images envoyées à l'ImageReader
             while (!outEos) {
                 if (!inEos) {
                     val inIdx = dec.dequeueInputBuffer(10_000)
@@ -131,22 +135,17 @@ object SessionScanner {
                 }
                 val outIdx = dec.dequeueOutputBuffer(info, 10_000)
                 if (outIdx >= 0) {
-                    dec.releaseOutputBuffer(outIdx, info.size > 0)
+                    val render = info.size > 0
+                    if (render) rendered++
+                    dec.releaseOutputBuffer(outIdx, render)
                     if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outEos = true
                     onProgress(min(1f, info.presentationTimeUs.toFloat() / durUs))
                 }
             }
 
-            // Attendre que les dernières images arrivent dans l'ImageReader
-            var last = -1
-            var stable = 0
-            var waited = 0
-            while (stable < 3 && waited < 40) {
-                Thread.sleep(100)
-                waited++
-                val now = frames.size
-                if (now == last) stable++ else { stable = 0; last = now }
-            }
+            // Attendre que chaque image décodée ait été traitée : résultat identique d'une analyse à l'autre
+            val deadline = System.currentTimeMillis() + 30_000
+            while (frames.size < rendered && System.currentTimeMillis() < deadline) Thread.sleep(20)
             val snapshot = synchronized(frames) { frames.toList() }
             return segment(snapshot, durUs / 1e6)
         } catch (_: Exception) {
@@ -218,19 +217,37 @@ object SessionScanner {
             val tStart = frames[r[0]].t
             val tEnd = frames[r[1]].t
             if (tEnd - tStart < 0.6) continue
-            val seed = findSeed(frames, tStart)
+            // Un coup = une balle posée avant le mouvement, qui a disparu après.
+            // Pas de balle avant, ou balle toujours là après : ce n'est pas un tir.
+            val seed = findSeed(frames, tStart) ?: continue
+            if (!ballGoneAfter(frames, seed, tEnd)) continue
+            // Une même balle ne compte qu'une fois, même si le mouvement a été découpé en deux épisodes
+            val prev = swings.lastOrNull()
+            if (prev != null && sameSpot(seed.u, seed.v, seed.d, prev.seedU, prev.seedV) && seed.t < prev.runEnd + 0.5) continue
             swings.add(
                 Swing(
                     runStart = tStart,
                     runEnd = tEnd,
-                    seedT = seed?.t ?: (tStart - 0.3),
-                    seedU = seed?.u ?: 0.0,
-                    seedV = seed?.v ?: 0.0,
-                    seedFound = seed != null
+                    seedT = seed.t,
+                    seedU = seed.u,
+                    seedV = seed.v,
+                    seedFound = true
                 )
             )
         }
         return Scan(duration, swings)
+    }
+
+    private fun sameSpot(u1: Double, v1: Double, d: Double, u2: Double, v2: Double): Boolean {
+        val tol = 0.6 * d + 3.0
+        return abs(u1 - u2) < tol && abs(v1 - v2) < tol
+    }
+
+    /** Vrai si, après la fin du mouvement, la balle n'est plus visible à son emplacement. */
+    private fun ballGoneAfter(frames: List<Frame>, seed: Seed, tEnd: Double): Boolean {
+        val win = frames.filter { it.hasBlobs && it.t > tEnd && it.t <= tEnd + GONE_WINDOW_S }
+        if (win.size < GONE_MIN_SAMPLES) return false
+        return win.none { f -> f.blobs.any { sameSpot(it.u, it.v, it.d, seed.u, seed.v) } }
     }
 
     /**
@@ -260,7 +277,7 @@ object SessionScanner {
                 if (count > bestCount || (count == bestCount && c.score > bestScore)) {
                     bestCount = count
                     bestScore = c.score
-                    best = Seed(lastT, c.u, c.v)
+                    best = Seed(lastT, c.u, c.v, c.d)
                 }
             }
         }
