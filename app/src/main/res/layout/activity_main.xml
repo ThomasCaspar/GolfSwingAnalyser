@@ -172,6 +172,16 @@
             android:textColor="#B0B0B0"
             android:textSize="12sp" />
 
+        <!-- Club du prochain tir : réglé ici avant de se placer, pas au moment du tir -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnClub"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Club : Non précisé"
+            android:textColor="#FFFFFF" />
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnSensitivity"
             style="@style/Widget.Material3.Button.OutlinedButton"

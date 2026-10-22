@@ -37,6 +37,8 @@ class MainActivity : AppCompatActivity() {
         const val COUNTDOWN_S = 3
         private const val BLINK_ON_MS = 350L
         private const val BLINK_OFF_MS = 650L
+        private const val PREFS = "settings"
+        private const val KEY_CLUB = "last_club"
 
         /** Touches envoyées par les télécommandes Bluetooth (déclencheur d'appareil photo) et le volume. */
         private val TRIGGER_KEYS = setOf(
@@ -65,7 +67,7 @@ class MainActivity : AppCompatActivity() {
     private var handAnim: ObjectAnimator? = null
     private val ui = Handler(Looper.getMainLooper())
 
-    private var club = Clubs.UNSPECIFIED            // club demandé avant chaque tir
+    private var club = Clubs.UNSPECIFIED            // club du prochain tir, réglé sur l'écran principal
     private var choosing = false                    // la liste des clubs est ouverte
     @Volatile private var ballInFrame = false       // balle reconnue dans le cadre virtuel
     private var frameCount = 0
@@ -129,6 +131,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         b.btnRecord.setOnClickListener { onManualTrigger() }
+        club = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_CLUB, Clubs.UNSPECIFIED) ?: Clubs.UNSPECIFIED
+        updateClubButton()
+        b.btnClub.setOnClickListener { chooseClub() }
         // Toucher l'écran : pendant le décompte = annulation, sinon verrouille le cadrage sur la zone touchée
         framingGestures = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent): Boolean = true
@@ -228,9 +233,9 @@ class MainActivity : AppCompatActivity() {
     // Décompte (retardateur)
     // ------------------------------------------------------------------
 
-    /** Avant chaque tir : choix du club, puis décompte. */
-    private fun requestCountdown() {
-        if (controller == null || choosing) return
+    /** Choix du club sur l'écran principal, avant de se placer ; retenu pour les tirs suivants. */
+    private fun chooseClub() {
+        if (phase != Phase.PREVIEW || choosing) return
         choosing = true
         wave.enabled = false
         Clubs.choose(
@@ -238,7 +243,11 @@ class MainActivity : AppCompatActivity() {
             onPick = {
                 choosing = false
                 club = it
-                startCountdown()
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_CLUB, club).apply()
+                updateClubButton()
+                wave.enabled = true
+                wave.reset()
+                wave.armFor(1000)
             },
             onCancel = {
                 choosing = false
@@ -247,6 +256,16 @@ class MainActivity : AppCompatActivity() {
                 wave.armFor(1000)
             }
         )
+    }
+
+    private fun updateClubButton() {
+        b.btnClub.text = "Club : $club"
+    }
+
+    /** Déclenchement d'un tir : décompte direct, le club a déjà été choisi. */
+    private fun requestCountdown() {
+        if (controller == null || choosing) return
+        startCountdown()
     }
 
     /** Balle reconnue dans le cadre virtuel : le cadre passe au vert. */
@@ -425,6 +444,7 @@ class MainActivity : AppCompatActivity() {
                 b.btnRecord.text = getString(R.string.btn_record)
                 setRecordColor("#00E676", "#001A0B")
                 b.btnSensitivity.isEnabled = true
+                b.btnClub.isEnabled = true
                 b.tvTip.visibility = View.VISIBLE
                 updateMeter(0, 3)
                 startHandAnim()
@@ -438,6 +458,7 @@ class MainActivity : AppCompatActivity() {
                 b.btnRecord.text = getString(R.string.btn_cancel)
                 setRecordColor("#FFFFFF", "#000000")
                 b.btnSensitivity.isEnabled = false
+                b.btnClub.isEnabled = false
                 stopHandAnim()
             }
             Phase.RECORDING -> {
@@ -449,6 +470,7 @@ class MainActivity : AppCompatActivity() {
                 b.btnRecord.text = getString(R.string.btn_stop)
                 setRecordColor("#FF3D00", "#FFFFFF")
                 b.btnSensitivity.isEnabled = false
+                b.btnClub.isEnabled = false
                 stopHandAnim()
             }
         }
