@@ -29,7 +29,8 @@ object SessionScanner {
         val seedT: Double,      // instant du repère de balle (s), avant le mouvement
         val seedU: Double,      // position de la balle (pixels bruts)
         val seedV: Double,
-        val seedFound: Boolean
+        val seedFound: Boolean,
+        val confirmed: Boolean  // balle vue avant puis disparue après : coup confirmé ; sinon à vérifier
     )
 
     class Scan(val duration: Double, val swings: List<Swing>)
@@ -212,26 +213,33 @@ object SessionScanner {
             }
         }
 
+        // Chaque épisode est proposé. Un coup confirmé : balle posée avant, disparue après.
+        // Les autres restent visibles, marqués « à vérifier », pour que l'utilisateur tranche.
         val swings = ArrayList<Swing>()
+        var lastConfirmed: Seed? = null
+        var lastConfirmedEnd = -1.0
         for (r in merged) {
             val tStart = frames[r[0]].t
             val tEnd = frames[r[1]].t
             if (tEnd - tStart < 0.6) continue
-            // Un coup = une balle posée avant le mouvement, qui a disparu après.
-            // Pas de balle avant, ou balle toujours là après : ce n'est pas un tir.
-            val seed = findSeed(frames, tStart) ?: continue
-            if (!ballGoneAfter(frames, seed, tEnd)) continue
-            // Une même balle ne compte qu'une fois, même si le mouvement a été découpé en deux épisodes
-            val prev = swings.lastOrNull()
-            if (prev != null && sameSpot(seed.u, seed.v, seed.d, prev.seedU, prev.seedV) && seed.t < prev.runEnd + 0.5) continue
+            val seed = findSeed(frames, tStart)
+            val gone = seed != null && ballGoneAfter(frames, seed, tEnd)
+            val dup = seed != null && lastConfirmed != null && sameSpot(seed.u, seed.v, seed.d, lastConfirmed.u, lastConfirmed.v) &&
+                seed.t < lastConfirmedEnd + 0.5
+            val confirmed = gone && !dup
+            if (confirmed) {
+                lastConfirmed = seed
+                lastConfirmedEnd = tEnd
+            }
             swings.add(
                 Swing(
                     runStart = tStart,
                     runEnd = tEnd,
-                    seedT = seed.t,
-                    seedU = seed.u,
-                    seedV = seed.v,
-                    seedFound = true
+                    seedT = seed?.t ?: (tStart - 0.3),
+                    seedU = seed?.u ?: 0.0,
+                    seedV = seed?.v ?: 0.0,
+                    seedFound = seed != null,
+                    confirmed = confirmed
                 )
             )
         }

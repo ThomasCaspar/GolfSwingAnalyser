@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.media.MediaMetadataRetriever
 import android.os.Bundle
+import android.view.View
 import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -41,7 +42,8 @@ class SessionAnalysisActivity : AppCompatActivity() {
         val seedU: Double,
         val seedV: Double,
         val found: Boolean,
-        val result: SwingResult?
+        val result: SwingResult?,
+        val confirmed: Boolean
     )
 
     private lateinit var b: ActivitySessionAnalysisBinding
@@ -68,11 +70,17 @@ class SessionAnalysisActivity : AppCompatActivity() {
             runOnUiThread { b.tvSessionProgress.text = "Recherche des swings… ${(p * 100).toInt()} %" }
         }
         if (scan == null) {
-            runOnUiThread { b.tvSessionProgress.text = getString(R.string.session_scan_failed) }
+            runOnUiThread {
+                b.tvSessionProgress.text = getString(R.string.session_scan_failed)
+                addManualButton()
+            }
             return
         }
         if (scan.swings.isEmpty()) {
-            runOnUiThread { b.tvSessionProgress.text = "Aucun swing détecté dans cette vidéo." }
+            runOnUiThread {
+                b.tvSessionProgress.text = "Aucun swing détecté automatiquement. Vous pouvez analyser la vidéo à la main."
+                addManualButton()
+            }
             return
         }
         runOnUiThread { b.tvSessionProgress.text = "${scan.swings.size} swing(s) trouvé(s). Analyse des trajectoires…" }
@@ -83,7 +91,7 @@ class SessionAnalysisActivity : AppCompatActivity() {
             } catch (_: Exception) {
                 null
             }
-            val row = Row(i + 1, s.runStart, s.runEnd, s.seedT, s.seedU, s.seedV, s.seedFound, res)
+            val row = Row(i + 1, s.runStart, s.runEnd, s.seedT, s.seedU, s.seedV, s.seedFound, res, s.confirmed)
             rows.add(row)
             runOnUiThread {
                 addRow(row)
@@ -94,6 +102,7 @@ class SessionAnalysisActivity : AppCompatActivity() {
         runOnUiThread {
             val ok = rows.count { it.result != null }
             b.tvSessionProgress.text = "$ok trajectoire(s) sur ${rows.size} swing(s). Touchez un swing pour voir son tracé."
+            addManualButton()
             askAi()
         }
     }
@@ -101,6 +110,7 @@ class SessionAnalysisActivity : AppCompatActivity() {
     private fun addRow(row: Row) {
         val r = row.result
         val label = buildString {
+            if (!row.confirmed) append("À vérifier · ")
             append("Swing ${row.index} · ${mmss(row.startT)}")
             when {
                 !row.found -> append(" · balle non trouvée, touchez-la")
@@ -120,6 +130,31 @@ class SessionAnalysisActivity : AppCompatActivity() {
             btn,
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 .apply { topMargin = 12 }
+        )
+    }
+
+    /** Toujours proposé : analyse de la vidéo entière dans le lecteur, en mode manuel. */
+    private fun addManualButton() {
+        if (b.llSwings.findViewWithTag<View>("manual") != null) return
+        val btn = MaterialButton(this).apply {
+            tag = "manual"
+            text = "Analyser la vidéo à la main"
+            setOnClickListener {
+                startActivity(Intent(this@SessionAnalysisActivity, ReviewActivity::class.java).apply {
+                    putExtra(ReviewActivity.EXTRA_VIDEO, videoPath)
+                    putExtra(ReviewActivity.EXTRA_SLOWMO, false)
+                    putExtra(ReviewActivity.EXTRA_FPS, 60)
+                    putExtra(ReviewActivity.EXTRA_FOCAL_RATIO, focal)
+                    putExtra(ReviewActivity.EXTRA_HFOV, 60.0)
+                    putExtra(ReviewActivity.EXTRA_CLUB, club)
+                    putExtra(ReviewActivity.EXTRA_MANUAL, true)
+                })
+            }
+        }
+        b.llSwings.addView(
+            btn,
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { topMargin = 24 }
         )
     }
 
